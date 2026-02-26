@@ -97,7 +97,13 @@
             <div class="sectionCard resultCard">
               <div class="sectionHeader">
                 <span class="namePre">生成结果</span>
-                <a-tag v-if="resultImages.length" color="purple">{{ resultImages.length }} 张</a-tag>
+                <div class="headerActions">
+                  <a-tag v-if="resultImages.length" color="purple">{{ resultImages.length }} 张</a-tag>
+                  <a-button v-if="isPolling" type="text" size="small" danger @click="cancelAllGenerating" class="stopPollingBtn">
+                    <template #icon><i-close-one theme="outline" size="14" /></template>
+                    取消生成
+                  </a-button>
+                </div>
               </div>
               <div class="resultContent">
                 <a-empty v-if="!resultImages.length" :image="simpleImage" description="暂无生成结果" />
@@ -121,6 +127,18 @@
                       <div class="generatingPlaceholder">
                         <a-spin />
                         <span>生成中...</span>
+                        <div class="cancelOverlay">
+                          <i-close-one class="cancelBtn" theme="outline" size="18" fill="#fff" @click.stop="cancelSingleImage(index)" />
+                        </div>
+                      </div>
+                    </template>
+                    <template v-else-if="item.state === '已取消'">
+                      <div class="cancelledPlaceholder">
+                        <i-close-one theme="outline" size="24" fill="#ef4444" />
+                        <span>已取消</span>
+                        <div class="deleteOverlay">
+                          <i-delete class="deleteCancelledBtn" theme="outline" size="18" fill="#fff" @click.stop="deleteCancelledImage(index)" />
+                        </div>
                       </div>
                     </template>
                     <template v-else>
@@ -160,6 +178,7 @@ import store from "@/stores";
 const { projectId } = storeToRefs(store());
 
 interface ImageState {
+  id?: number;
   filePath: string;
   state: string;
 }
@@ -191,6 +210,8 @@ const modalShow = defineModel<boolean>({ default: false });
 // 使用组件内部状态，确保每个弹窗实例独立
 const promptLoading = ref(false);
 const generateLoading = ref(false);
+const isPolling = ref(false);
+const pollTimeout = ref<number | null>(null);
 
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE;
 
@@ -215,12 +236,11 @@ watch(modalShow, (visible) => {
   if (visible && props.data) {
     formData.value = { ...props.data, sampleImage: "", uploadImage: "" };
     fetchImages(props.data.id);
-    // 重置加载状态，确保每次打开弹窗时状态独立
     promptLoading.value = false;
     generateLoading.value = false;
   }
   if (!visible) {
-    timer && clearTimeout(timer);
+    stopPollingOnly();
   }
 });
 function handleSelect(item: ImageState, index: number) {
@@ -228,29 +248,138 @@ function handleSelect(item: ImageState, index: number) {
     message.warn("生成中");
     return;
   }
+  if (item.state == "已取消") {
+    message.warn("已取消的图片无法选择");
+    return;
+  }
   selectedIndex.value = index;
 }
 function setPreviewVisible(value: boolean) {
   previewVisible.value = value;
 }
-let timer: number = -1;
-// 获取图片列表
+
+function stopPolling() {
+  if (pollTimeout.value !== null) {
+    clearTimeout(pollTimeout.value);
+    pollTimeout.value = null;
+  }
+  isPolling.value = false;
+}
+
+function stopPollingOnly() {
+  if (pollTimeout.value !== null) {
+    clearTimeout(pollTimeout.value);
+    pollTimeout.value = null;
+  }
+  isPolling.value = false;
+}
+
+function cancelAllGenerating() {
+  resultImages.value.forEach(async (item) => {
+    if (item.state === "生成中" && item.id) {
+      try {
+        await axios.post("/assets/updateImage", { id: item.id, state: "已取消" });
+        item.state = "已取消";
+      } catch (error) {
+        console.error("更新图片状态失败:", error);
+      }
+    }
+  });
+
+  const hasGenerating = resultImages.value.some((item) => item.state === "生成中");
+  if (!hasGenerating) {
+    stopPolling();
+  }
+}
+
 async function fetchImages(id: number) {
   const _id = id;
-  const { data } = await axios.post("/assets/getImage", { assetsId: id });
-  if (data.tempAssets.filter((i: { state: string }) => i.state == "生成中").length > 0) {
-    timer = setTimeout(() => {
-      if (modalShow.value) fetchImages(_id);
-    }, 2000);
-  }
-  if (_id == formData.value?.id) {
-    if (data.filePath.length > 0) {
-      resultImages.value = [{ filePath: data.filePath, state: "生成成功" }, ...data.tempAssets];
-      selectedIndex.value = resultImages.value.findIndex((item) => item.filePath === formData.value?.filePath);
+  try {
+    const { data } = await axios.post("/assets/getImage", { assetsId: id });
+
+    const generatingItems = data.tempAssets.filter((i: { state: string }) => i.state === "生成中");
+
+    if (generatingItems.length > 0 && modalShow.value) {
+      isPolling.value = true;
+      pollTimeout.value = setTimeout(() => {
+        if (modalShow.value) fetchImages(_id);
+      }, 2000);
     } else {
-      resultImages.value = [...data.tempAssets];
-      selectedIndex.value = resultImages.value.findIndex((item) => item.filePath === formData.value?.filePath && formData.value?.filePath.length > 0);
+      stopPollingOnly();
     }
+
+    if (_id == formData.value?.id) {
+      const cancelledIds = resultImages.value.filter((item) => item.state === "已取消" && item.id).map((item) => item.id!);
+
+      const imageMap = new Map<number, ImageState>();
+
+      if (data.filePath.length > 0) {
+        imageMap.set(0, { filePath: data.filePath, state: "生成成功" });
+      }
+
+      data.tempAssets.forEach((item: ImageState & { id: number }) => {
+        if (cancelledIds.includes(item.id) && item.state === "生成中") {
+          imageMap.set(item.id, { ...item, state: "已取消" });
+        } else {
+          imageMap.set(item.id, { ...item });
+        }
+      });
+
+      resultImages.value = Array.from(imageMap.values());
+
+      selectedIndex.value = resultImages.value.findIndex((item) => item.filePath === formData.value?.filePath);
+    }
+  } catch (error) {
+    console.error("获取图片列表失败:", error);
+    stopPollingOnly();
+  }
+}
+
+// 取消单张图片的生成
+async function cancelSingleImage(index: number) {
+  if (index < 0 || index >= resultImages.value.length) return;
+
+  const item = resultImages.value[index];
+  if (item.state !== "生成中" || !item.id) return;
+
+  try {
+    await axios.post("/assets/updateImage", { id: item.id, state: "已取消" });
+    item.state = "已取消";
+    message.success("已取消");
+
+    const hasGenerating = resultImages.value.some((img) => img.state === "生成中");
+    if (!hasGenerating) {
+      stopPollingOnly();
+    }
+  } catch (error) {
+    console.error("取消图片生成失败:", error);
+    message.error("取消失败");
+  }
+}
+
+// 删除已取消的图片
+async function deleteCancelledImage(index: number) {
+  if (index < 0 || index >= resultImages.value.length) return;
+
+  const item = resultImages.value[index];
+  if (item.state !== "已取消") return;
+
+  try {
+    if (item.id) {
+      await axios.post("/assets/delImage", { id: item.id });
+    }
+    resultImages.value.splice(index, 1);
+
+    if (selectedIndex.value === index) {
+      selectedIndex.value = -1;
+    } else if (selectedIndex.value > index) {
+      selectedIndex.value--;
+    }
+
+    message.success("已删除");
+  } catch (error) {
+    console.error("删除图片失败:", error);
+    message.error("删除失败");
   }
 }
 
@@ -325,6 +454,7 @@ async function startGenerate() {
   if (!formData.value) return;
   const { id, name, sampleImage, prompt } = formData.value;
   console.log("%c Line:327 🍖 formData.value", "background:#33a5ff", formData.value);
+
   fakeLoading.value = true;
   generateLoading.value = true;
   try {
@@ -344,13 +474,13 @@ async function startGenerate() {
     const { data } = await _promise;
     await fetchImages(props.data?.id ?? -1);
     message.success("资产生成成功");
-    if (data.assetsId === formData.value.id) {
-      resultImages.value.push({ filePath: data.path, state: "生成成功" });
-    }
   } catch (e) {
+    console.error("资产生成失败:", e);
     message.error("资产生成失败");
+    stopPollingOnly();
   } finally {
     generateLoading.value = false;
+    fakeLoading.value = false;
   }
 }
 
@@ -542,6 +672,25 @@ async function blobUrlToBase64(blobUrl: string): Promise<string> {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
+  }
+
+  .headerActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .stopPollingBtn {
+    padding: 0 8px;
+    height: 24px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
   }
 
   .namePre {
@@ -781,10 +930,38 @@ async function blobUrlToBase64(blobUrl: string): Promise<string> {
       background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
       border: 1px dashed #d1d5db;
       border-radius: 10px;
+      position: relative;
 
       span {
         font-size: 12px;
         color: #6b7280;
+      }
+
+      .cancelOverlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+
+      &:hover .cancelOverlay {
+        opacity: 1;
+      }
+
+      .cancelBtn {
+        padding: 8px;
+        background: rgba(239, 68, 68, 0.9);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: transform 0.2s;
+
+        &:hover {
+          transform: scale(1.1);
+        }
       }
     }
 
@@ -797,6 +974,53 @@ async function blobUrlToBase64(blobUrl: string): Promise<string> {
       background: #fef2f2;
       color: #ef4444;
       font-size: 12px;
+    }
+
+    .cancelledPlaceholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+      border: 1px dashed #fca5a5;
+      border-radius: 10px;
+      position: relative;
+
+      span {
+        font-size: 12px;
+        color: #ef4444;
+        font-weight: 500;
+      }
+
+      .deleteOverlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+
+      &:hover .deleteOverlay {
+        opacity: 1;
+      }
+
+      .deleteCancelledBtn {
+        padding: 8px;
+        background: rgba(239, 68, 68, 0.9);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: transform 0.2s;
+
+        &:hover {
+          transform: scale(1.1);
+        }
+      }
     }
   }
 

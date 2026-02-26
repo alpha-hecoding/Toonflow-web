@@ -58,7 +58,10 @@
                   </div>
                   <div class="card-header">
                     <h3 :title="model.modelName">{{ model.modelName }}</h3>
-                    <a-tag :color="getManufacturerColor(model.manufacturer)">{{ model.manufacturerName }}</a-tag>
+                    <div class="card-tags">
+                      <a-tag :color="getManufacturerColor(model.manufacturer)">{{ model.manufacturerName }}</a-tag>
+                      <a-tag v-if="tab.key === 'image' && typeLabels[model.modelType]" color="orange">{{ typeLabels[model.modelType] }}</a-tag>
+                    </div>
                   </div>
                 </div>
                 <!-- 自定义卡片 -->
@@ -314,9 +317,14 @@ const textModelPresets = {
   },
   volcengine: {
     text: [
-      { label: "doubao-lite-4-chat", value: "doubao-lite-4-chat" },
-      { label: "doubao-pro-4-chat", value: "doubao-pro-4-chat" },
+      { label: "doubao-seed-2-0-pro-260215", value: "doubao-seed-2-0-pro-260215" },
+      { label: "doubao-seed-2-0-lite-260215", value: "doubao-seed-2-0-lite-260215" },
+      { label: "doubao-seed-2-0-mini-260215", value: "doubao-seed-2-0-mini-260215" },
       { label: "doubao-seed-1-8-251228", value: "doubao-seed-1-8-251228" },
+      { label: "deepseek-v3-2-251201", value: "deepseek-v3-2-251201" },
+      { label: "glm-4-7-251222", value: "glm-4-7-251222" },
+      { label: "doubao-pro-4-chat", value: "doubao-pro-4-chat" },
+      { label: "doubao-lite-4-chat", value: "doubao-lite-4-chat" },
       { label: "doubao-seed-1-6-251015", value: "doubao-seed-1-6-251015" },
     ],
   },
@@ -354,12 +362,12 @@ const textModelPresets = {
   },
   gemini: {
     text: [
+      { label: "gemini-2.5-pro", value: "gemini-2.5-pro" },
+      { label: "gemini-2.5-flash", value: "gemini-2.5-flash" },
       { label: "gemini-2.0-flash", value: "gemini-2.0-flash" },
       { label: "gemini-2.0-flash-lite", value: "gemini-2.0-flash-lite" },
       { label: "gemini-1.5-pro", value: "gemini-1.5-pro" },
       { label: "gemini-1.5-flash", value: "gemini-1.5-flash" },
-      { label: "gemini-2.5-pro", value: "gemini-2.5-pro" },
-      { label: "gemini-2.5-flash", value: "gemini-2.5-flash" },
     ],
   },
   anthropic: {
@@ -475,8 +483,16 @@ watch(activeTab, () => {
 //图片模型预设
 const imageModelPresets = {
   volcengine: {
-    t2i: [{ label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" }],
-    i2i: [{ label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" }],
+    t2i: [
+      { label: "doubao-seedream-5-0-lite-260128", value: "doubao-seedream-5-0-lite-260128" },
+      { label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" },
+      { label: "doubao-seedream-4-0-250828", value: "doubao-seedream-4-0-250828" },
+    ],
+    i2i: [
+      { label: "doubao-seedream-5-0-lite-260128", value: "doubao-seedream-5-0-lite-260128" },
+      { label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" },
+      { label: "doubao-seedream-4-0-250828", value: "doubao-seedream-4-0-250828" },
+    ],
   },
   kling: {
     t2i: [
@@ -496,12 +512,12 @@ const imageModelPresets = {
   },
   gemini: {
     t2i: [
-      { label: "gemini-2.5-flash-image", value: "gemini-2.5-flash-image" },
       { label: "gemini-3-pro-image-preview", value: "gemini-3-pro-image-preview" },
+      { label: "gemini-2.5-flash-image", value: "gemini-2.5-flash-image" },
     ],
     i2i: [
-      { label: "gemini-2.5-flash-image", value: "gemini-2.5-flash-image" },
       { label: "gemini-3-pro-image-preview", value: "gemini-3-pro-image-preview" },
+      { label: "gemini-2.5-flash-image", value: "gemini-2.5-flash-image" },
     ],
   },
   vidu: {
@@ -582,18 +598,18 @@ const videoModelPresets = {
   kling: {
     singleImage: [],
     startEndRequired: [
-      { label: "kling-v1(STD)", value: "kling-v1(STD)" },
-      { label: "kling-v1(PRO)", value: "kling-v1(PRO)" },
       { label: "kling-v1-6(PRO)", value: "kling-v1-6(PRO)" },
+      { label: "kling-v1(PRO)", value: "kling-v1(PRO)" },
+      { label: "kling-v1(STD)", value: "kling-v1(STD)" },
     ],
     endFrameOptional: [],
     startFrameOptional: [],
     multiImage: [],
     reference: [],
     text2video: [
-      { label: "kling-v1(STD)", value: "kling-v1(STD)" },
-      { label: "kling-v1(PRO)", value: "kling-v1(PRO)" },
       { label: "kling-v1-6(PRO)", value: "kling-v1-6(PRO)" },
+      { label: "kling-v1(PRO)", value: "kling-v1(PRO)" },
+      { label: "kling-v1(STD)", value: "kling-v1(STD)" },
     ],
   },
   gemini: {
@@ -610,10 +626,10 @@ const videoModelPresets = {
     multiImage: [],
     reference: [{ label: "veo-3.1-generate-preview", value: "veo-3.1-generate-preview" }],
     text2video: [
-      { label: "veo-2.0-generate-001", value: "veo-2.0-generate-001" },
+      { label: "veo-3.1-generate-preview", value: "veo-3.1-generate-preview" },
       { label: "veo-3.0-fast-generate-preview", value: "veo-3.0-fast-generate-preview" },
       { label: "veo-3.0-generate-preview", value: "veo-3.0-generate-preview" },
-      { label: "veo-3.1-generate-preview", value: "veo-3.1-generate-preview" },
+      { label: "veo-2.0-generate-001", value: "veo-2.0-generate-001" },
     ],
   },
   wan: {
@@ -670,10 +686,10 @@ const videoModelPresets = {
       { label: "viduq2-pro", value: "viduq2-pro" },
     ],
     text2video: [
-      { label: "viduq1", value: "viduq1" },
-      { label: "viduq2-turbo", value: "viduq2-turbo" },
-      { label: "viduq2-pro", value: "viduq2-pro" },
       { label: "viduq3-pro", value: "viduq3-pro" },
+      { label: "viduq2-pro", value: "viduq2-pro" },
+      { label: "viduq2-turbo", value: "viduq2-turbo" },
+      { label: "viduq1", value: "viduq1" },
     ],
   },
 };

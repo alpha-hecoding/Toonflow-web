@@ -17,10 +17,33 @@ class WsClient {
   private retries = 0;
 
   constructor(url: string, options: WsOptions = {}) {
-    const fullUrl = new URL(url, import.meta.env.VITE_WS_URL);
+    let baseUrl = import.meta.env.VITE_WS_URL;
+    if (baseUrl.startsWith("/")) {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      baseUrl = `${protocol}//${window.location.host}${baseUrl}`;
+    }
+    const wsUrl = new URL(baseUrl);
+
+    const urlParts = url.split("?");
+    const pathPart = urlParts[0];
+    const queryPart = urlParts[1];
+
+    if (pathPart.startsWith("/")) {
+      wsUrl.pathname = wsUrl.pathname.replace(/\/$/, "") + pathPart;
+    } else {
+      wsUrl.pathname = wsUrl.pathname.replace(/\/$/, "") + "/" + pathPart;
+    }
+
+    if (queryPart) {
+      const params = new URLSearchParams(queryPart);
+      params.forEach((value, key) => {
+        wsUrl.searchParams.set(key, value);
+      });
+    }
+
     const token = localStorage.getItem("token");
-    if (token) fullUrl.searchParams.set("token", token);
-    this.url = fullUrl.toString();
+    if (token) wsUrl.searchParams.set("token", token);
+    this.url = wsUrl.toString();
     this.options = options;
     this.connect();
   }

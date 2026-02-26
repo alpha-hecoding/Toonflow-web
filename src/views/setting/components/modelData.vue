@@ -2,7 +2,7 @@
   <div class="modelData">
     <el-dialog
       v-model="modelDataShow"
-      title="模型数据管理"
+      :title="isStandalone ? '模型管理' : '模型数据管理'"
       top="1vh"
       :footer="null"
       width="90%"
@@ -41,13 +41,13 @@
           <vxe-table
             ref="tableRef"
             :data="filteredTableData"
-            :radio-config="{ highlight: true, checkMethod: checkRadioMethod, trigger: 'row' }"
+            :radio-config="!isStandalone ? { highlight: true, checkMethod: checkRadioMethod, trigger: 'row' } : undefined"
             :row-config="{ isHover: true }"
             stripe
             border="inner"
             round
             class="custom-table">
-            <vxe-column type="radio" title="选中" width="60" align="center"></vxe-column>
+            <vxe-column v-if="!isStandalone" type="radio" title="选中" width="60" align="center"></vxe-column>
             <vxe-column field="manufacturer" title="厂商" width="120" align="center">
               <template #default="{ row }">
                 <a-tag color="blue" class="manufacturer-tag">{{ row.manufacturer }}</a-tag>
@@ -61,7 +61,7 @@
                 </a-tag>
                 <a-tag v-if="row.type == 'image'" color="orange" class="type-tag">
                   <template #icon>🖼️</template>
-                  图像模型
+                  {{ row.modelType === "t2i" ? "文生图" : "图生图" }}
                 </a-tag>
                 <a-tag v-if="row.type == 'video'" color="purple" class="type-tag">
                   <template #icon>🎬</template>
@@ -157,8 +157,8 @@
 
         <div class="footer-actions">
           <a-space size="middle">
-            <a-button size="large" @click="modelDataShow = false">取消</a-button>
-            <a-button type="primary" size="large" @click="confirmConfig" class="confirm-btn">
+            <a-button size="large" @click="modelDataShow = false">{{ isStandalone ? '关闭' : '取消' }}</a-button>
+            <a-button v-if="!isStandalone" type="primary" size="large" @click="confirmConfig" class="confirm-btn">
               <template #icon>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                   <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
@@ -246,6 +246,10 @@ const props = defineProps({
   currentType: {
     type: String,
     default: "text",
+  },
+  isStandalone: {
+    type: Boolean,
+    default: false,
   },
 });
 interface ModelType {
@@ -482,7 +486,7 @@ async function testAi(row: RowData) {
       }
     }
   } catch (e: any) {
-    message.error(`连接失败: ${e.message}`);
+    ElMessage.error(`连接失败: ${e.message || "未知错误"}`);
   } finally {
     row.load = false;
   }
@@ -503,8 +507,13 @@ watch(
 );
 //查询模型列表
 async function fetchModelList() {
-  const res = await axios.post("/setting/getSetting");
-  tableData.value = res.data;
+  if (props.isStandalone) {
+    const res = await axios.post("/setting/getModelList", { type: ["text", "image"] });
+    tableData.value = res.data || [];
+  } else {
+    const res = await axios.post("/setting/getSetting");
+    tableData.value = res.data;
+  }
 }
 
 //删除模型
@@ -514,7 +523,9 @@ function delModelBtn(row: RowData) {
     .then(() => {
       message.success("模型删除成功");
       fetchModelList();
-      emit("modelList");
+      if (!props.isStandalone) {
+        emit("modelList");
+      }
     })
     .catch(() => {
       message.error("模型删除失败");
@@ -523,6 +534,9 @@ function delModelBtn(row: RowData) {
 const emit = defineEmits(["modelList"]);
 // 确认配置
 async function confirmConfig() {
+  if (props.isStandalone) {
+    return;
+  }
   const selectedRow = tableRef.value?.getRadioRecord();
   if (!selectedRow) {
     message.warning("请先选择一个模型");

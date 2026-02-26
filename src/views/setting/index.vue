@@ -2,8 +2,12 @@
   <div class="settingContainer">
     <span>设置</span>
     <div class="model">
-      <div class="jb c" style="margin-top: 10px">
-        <h1 style="font-size: 18px; display: block">AI 模型配置</h1>
+      <div class="section-header" style="margin-top: 10px">
+        <h1 style="font-size: 18px; margin: 0">AI 模型配置</h1>
+        <!-- <a-button type="primary" @click="openModelData" class="manage-model-btn">
+          <i-plus theme="outline" size="16" fill="currentColor" />
+          管理模型
+        </a-button> -->
       </div>
       <div class="model-grid">
         <div v-for="(item, index) in modelData" :key="index" class="model-card-item">
@@ -203,6 +207,7 @@
     </div>
     <PromptEditor v-model="promptEditorShow" />
     <newModelData v-model:modelDataShow="modelDataShow" :currentType="currentType" v-model:configingModel="configingModel" @modelList="modelList" />
+    <newModelData v-model:modelDataShow="modelManagementShow" :isStandalone="true" />
     <ModeListDialog :typeList="['video']" v-model:modelShow="videoModelDialogShow" state="选择视频模型" @fetchModelList="onVideoModelDialogClose" />
     <addModelDialog v-model="editDialogVisible" v-if="editDialogVisible" v-model:modelForm="editForm" @fetchModelList="loadVideoModels" />
   </div>
@@ -279,6 +284,12 @@ async function loadVideoModels() {
 
 const modelDataShow = ref(false);
 const configingModel = ref<ModelType>();
+const modelManagementShow = ref(false);
+
+// 打开模型数据管理
+function openModelData() {
+  modelManagementShow.value = true;
+}
 
 // 开始配置
 function startConfig(item: ModelType) {
@@ -634,7 +645,8 @@ function openLicense() {
         }
       }
 
-      .add-video-btn {
+      .add-video-btn,
+      .manage-model-btn {
         display: inline-flex;
         align-items: center;
         gap: 8px;

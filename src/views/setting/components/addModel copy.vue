@@ -368,8 +368,14 @@ const textModelPresets = {
 //图片模型预设
 const imageModelPresets = {
   volcengine: {
-    t2i: [{ label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" }],
-    i2i: [{ label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" }],
+    t2i: [
+      { label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" },
+      { label: "doubao-seedream-4-0-250828", value: "doubao-seedream-4-0-250828" },
+    ],
+    i2i: [
+      { label: "doubao-seedream-4-5-251128", value: "doubao-seedream-4-5-251128" },
+      { label: "doubao-seedream-4-0-250828", value: "doubao-seedream-4-0-250828" },
+    ],
   },
   kling: {
     t2i: [
