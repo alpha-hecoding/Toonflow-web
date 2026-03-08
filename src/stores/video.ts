@@ -23,7 +23,8 @@ export interface VideoConfig {
   resolution: string;
   duration: number;
   prompt: string;
-  selectedResultId: number | null; // 选中的生成结果ID
+  selectedResultId: number | null;
+  storyboardId?: number | null;
   createdAt: string;
   audioEnabled: boolean;
 }
@@ -177,6 +178,7 @@ export default defineStore(
               duration: item.duration,
               prompt: item.prompt || "",
               selectedResultId: item.selectedResultId,
+              storyboardId: item.storyboardId,
               createdAt: item.createdAt || new Date().toISOString(),
               audioEnabled: item.audioEnabled,
             };
@@ -210,6 +212,7 @@ export default defineStore(
         duration: configData.duration,
         prompt: configData.prompt || "",
         selectedResultId: configData.selectedResultId || null,
+        storyboardId: configData.storyboardId,
         createdAt: configData.createdAt || new Date().toISOString(),
         audioEnabled: configData.audioEnabled,
       };
@@ -237,6 +240,23 @@ export default defineStore(
       };
       videoConfigs.value.push(newConfig);
       return newConfig;
+    }
+
+    // 批量添加配置（调用后端接口）
+    async function batchAddConfig(params: {
+      scriptId: number;
+      projectId: number;
+      configId: number;
+      mode: "startEnd" | "multi" | "single" | "text";
+      resolution: string;
+      audioEnabled: boolean;
+      storyboardIds: number[];
+      endFrame?: ImageItem | null;
+      images?: ImageItem[];
+      prompt?: string;
+    }): Promise<number> {
+      const { data } = await axios.post("/video/batchAddVideoConfig", params);
+      return data?.data?.length || 0;
     }
 
     // 删除配置
@@ -422,6 +442,7 @@ export default defineStore(
       startPolling,
       stopPolling,
       cleanup,
+      batchAddConfig,
     };
   },
   { persist: false },

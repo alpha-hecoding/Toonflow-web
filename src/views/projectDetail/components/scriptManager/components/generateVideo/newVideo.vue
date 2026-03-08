@@ -12,10 +12,16 @@
       <div class="configPanel">
         <div class="configHeader">
           <h3>视频生成配置</h3>
-          <a-button type="primary" @click="addVideoConfig">
-            <plus-outlined />
-            添加配置
-          </a-button>
+          <div class="headerBtns">
+            <a-button type="default" @click="openBatchConfig">
+              <appstore-add-outlined />
+              批量配置
+            </a-button>
+            <a-button type="primary" @click="addVideoConfig">
+              <plus-outlined />
+              添加配置
+            </a-button>
+          </div>
         </div>
         <!-- 视频配置列表 Grid 布局 -->
         <div class="configList" v-if="videoConfigs.length > 0">
@@ -221,13 +227,99 @@
         </div>
       </template>
     </a-modal>
+
+    <!-- 批量配置弹窗 -->
+    <a-modal
+      v-model:open="batchConfigVisible"
+      title="批量配置"
+      width="700px"
+      @ok="handleBatchConfigOk"
+      @cancel="batchConfigVisible = false"
+      :confirmLoading="batchConfigLoading"
+      okText="确认配置">
+      <div class="batchConfigContent">
+        <a-alert message="批量配置将为选中的每个分镜头创建独立的视频配置" type="info" show-icon style="margin-bottom: 16px" />
+
+        <div class="batchForm">
+          <div class="batchFormItem">
+            <label class="batchLabel">选择分镜头：</label>
+            <a-button type="link" size="small" @click="openStoryboardSelector">选择分镜头 ({{ selectedStoryboardIds.length }}个)</a-button>
+          </div>
+
+          <div class="batchFormItem">
+            <label class="batchLabel">视频模型：</label>
+            <a-select v-model:value="batchConfig.configId" @change="onBatchManufacturerChange" style="width: 300px" size="small">
+              <a-select-option v-for="item in availableManufacturers" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </a-select-option>
+            </a-select>
+          </div>
+
+          <div class="batchFormItem">
+            <label class="batchLabel">模式：</label>
+            <a-radio-group v-model:value="batchConfig.mode" size="small">
+              <a-radio v-for="mode in getBatchModeOptions()" :key="mode.value" :value="mode.value">
+                {{ mode.label }}
+              </a-radio>
+            </a-radio-group>
+            <span class="batchTip" v-if="batchConfig.mode === 'startEnd'">首帧图片将自动使用分镜头图片</span>
+          </div>
+
+          <div class="batchFormItem">
+            <label class="batchLabel">{{ getResolutionLabel(batchConfig.manufacturer, batchConfig.model) }}：</label>
+            <a-select v-model:value="batchConfig.resolution" size="small" style="width: 140px">
+              <a-select-option v-for="res in getResolutionOptions(batchConfig.manufacturer, batchConfig.model)" :key="res.value" :value="res.value">
+                {{ res.label }}
+              </a-select-option>
+            </a-select>
+          </div>
+
+          <div class="batchFormItem" v-if="getAudioSupport(batchConfig.manufacturer, batchConfig.model)">
+            <label class="batchLabel">声音：</label>
+            <a-switch v-model:checked="batchConfig.audioEnabled" size="small" />
+            <span class="batchTip">{{ batchConfig.audioEnabled ? "开启" : "关闭" }}</span>
+          </div>
+
+          <div class="batchFormItem">
+            <label class="batchLabel">提示词：</label>
+            <a-textarea v-model:value="batchConfig.prompt" :rows="2" placeholder="可选，留空则使用分镜头的视频提示词" size="small" style="flex: 1" />
+          </div>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 分镜头选择弹窗 -->
+    <a-modal
+      v-model:open="storyboardSelectorVisible"
+      title="选择分镜头"
+      @ok="confirmStoryboardSelection"
+      @cancel="storyboardSelectorVisible = false"
+      width="80%"
+      :bodyStyle="{ maxHeight: '70vh', overflow: 'auto' }">
+      <mainElement
+        v-if="storyboardSelectorVisible"
+        way="checkbox"
+        radio="storyboard"
+        ref="storyboardSelectorRef"
+        @checkChange="handleStoryboardCheckChange"
+        @check-all="handleStoryboardCheckAll" />
+      <template #footer>
+        <div class="selectorFooter">
+          <span class="selectedCount">已选择 {{ selectedStoryboardIds.length }} 个分镜头</span>
+          <div>
+            <a-button @click="storyboardSelectorVisible = false">取消</a-button>
+            <a-button type="primary" @click="confirmStoryboardSelection">确定</a-button>
+          </div>
+        </div>
+      </template>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from "vue";
 import { message } from "ant-design-vue";
-import { PlusOutlined, DeleteOutlined, CloseOutlined } from "@ant-design/icons-vue";
+import { PlusOutlined, DeleteOutlined, CloseOutlined, AppstoreAddOutlined } from "@ant-design/icons-vue";
 import draggable from "vuedraggable";
 import mainElement from "@/views/projectDetail/components/assetsManager/components/mainElement.vue";
 import axios from "@/utils/axios";
@@ -292,13 +384,41 @@ const currentEditConfig = ref<VideoConfig | null>(null);
 const tempSelectedImages = ref<ImageItem[]>([]);
 const tempSelectedIds = ref<number[]>([]);
 const manufacturerList = ref<{ model: string; manufacturer: string; id: number }[]>([]);
+
+const batchConfigVisible = ref(false);
+const batchConfigLoading = ref(false);
+const storyboardSelectorVisible = ref(false);
+const storyboardSelectorRef = ref<any>(null);
+const selectedStoryboardIds = ref<number[]>([]);
+const batchConfig = ref<{
+  configId: number | undefined;
+  manufacturer: string;
+  model: string;
+  mode: "startEnd" | "multi" | "single" | "text";
+  resolution: string;
+  audioEnabled: boolean;
+  prompt: string;
+}>({
+  configId: undefined,
+  manufacturer: "",
+  model: "",
+  mode: "startEnd",
+  resolution: "",
+  audioEnabled: false,
+  prompt: "",
+});
+
 const manufacturerAllRecord: Record<string, string> = Object.values(manufacturerConfigs).reduce((acc: Record<string, string>, c) => {
   acc[c.value as string] = c.label;
   return acc;
 }, {});
 const availableManufacturers = computed(() => {
   if (manufacturerList.value.length === 0) return [];
-  return manufacturerList.value.map((i) => ({ label: i.model + " " +manufacturerAllRecord[i.manufacturer], value: i.id, manufacturer: i.manufacturer }));
+  return manufacturerList.value.map((i) => ({
+    label: i.model + " " + manufacturerAllRecord[i.manufacturer],
+    value: i.id,
+    manufacturer: i.manufacturer,
+  }));
 });
 onMounted(async () => {
   getModelList();
@@ -548,6 +668,115 @@ async function handleOk() {
 function handleCancel() {
   videoConfigs.value = [];
 }
+
+function openBatchConfig() {
+  if (availableManufacturers.value.length === 0) {
+    message.warning("请先配置视频模型");
+    return;
+  }
+  const defaultItem = availableManufacturers.value[0];
+  const defaultManufacturer = defaultItem?.manufacturer || "volcengine";
+  const defaultModel = manufacturerList.value.find((i) => i.id === defaultItem?.value)?.model || "";
+
+  batchConfig.value = {
+    configId: defaultItem?.value,
+    manufacturer: defaultManufacturer,
+    model: defaultModel,
+    mode: getDefaultMode(defaultManufacturer, defaultModel) as "startEnd" | "multi" | "single" | "text",
+    resolution: getDefaultResolution(defaultManufacturer, defaultModel),
+    audioEnabled: false,
+    prompt: "",
+  };
+  selectedStoryboardIds.value = [];
+  batchConfigVisible.value = true;
+}
+
+function onBatchManufacturerChange() {
+  const selectedItem = manufacturerList.value.find((i) => i.id === batchConfig.value.configId);
+  batchConfig.value.manufacturer = selectedItem?.manufacturer || "";
+  batchConfig.value.model = selectedItem?.model || "";
+  const manufacturerConfig = getManufacturerConfig(batchConfig.value.manufacturer, batchConfig.value.model);
+  batchConfig.value.mode = manufacturerConfig.defaultMode as "startEnd" | "multi" | "single" | "text";
+  batchConfig.value.resolution = manufacturerConfig.defaultResolution;
+}
+
+function getBatchModeOptions() {
+  return getModeOptions(batchConfig.value.manufacturer, batchConfig.value.model);
+}
+
+function openStoryboardSelector() {
+  if (props.scriptId && props.scriptId !== -1) {
+    currentScriptId.value = props.scriptId;
+  }
+  storyboardSelectorVisible.value = true;
+}
+
+function handleStoryboardCheckChange(data: { checked: boolean; row: Storyboard }) {
+  if (data.checked) {
+    if (!selectedStoryboardIds.value.includes(data.row.id)) {
+      selectedStoryboardIds.value.push(data.row.id);
+    }
+  } else {
+    const index = selectedStoryboardIds.value.indexOf(data.row.id);
+    if (index > -1) {
+      selectedStoryboardIds.value.splice(index, 1);
+    }
+  }
+}
+
+function handleStoryboardCheckAll(data: { checked: boolean; records: Storyboard[] }) {
+  if (data.checked) {
+    data.records.forEach((row) => {
+      if (!selectedStoryboardIds.value.includes(row.id)) {
+        selectedStoryboardIds.value.push(row.id);
+      }
+    });
+  } else {
+    data.records.forEach((row) => {
+      const index = selectedStoryboardIds.value.indexOf(row.id);
+      if (index > -1) {
+        selectedStoryboardIds.value.splice(index, 1);
+      }
+    });
+  }
+}
+
+function confirmStoryboardSelection() {
+  storyboardSelectorVisible.value = false;
+}
+
+async function handleBatchConfigOk() {
+  if (selectedStoryboardIds.value.length === 0) {
+    message.warning("请选择至少一个分镜头");
+    return;
+  }
+  if (!batchConfig.value.configId) {
+    message.warning("请选择视频模型");
+    return;
+  }
+
+  batchConfigLoading.value = true;
+  try {
+    const count = await videoStoreInstance.batchAddConfig({
+      scriptId: props.scriptId,
+      projectId: Number(project.value!.id!),
+      configId: batchConfig.value.configId!,
+      mode: batchConfig.value.mode,
+      resolution: batchConfig.value.resolution,
+      audioEnabled: batchConfig.value.audioEnabled,
+      storyboardIds: selectedStoryboardIds.value,
+      prompt: batchConfig.value.prompt || undefined,
+    });
+    message.success(`成功批量创建 ${count} 个视频配置`);
+    batchConfigVisible.value = false;
+    storyboardShow.value = false;
+    await videoStoreInstance.fetchVideoConfigs(props.scriptId);
+  } catch (error: any) {
+    message.error(error?.message || "批量配置失败");
+  } finally {
+    batchConfigLoading.value = false;
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -566,6 +795,10 @@ function handleCancel() {
       margin: 0;
       font-size: 16px;
       font-weight: 600;
+    }
+    .headerBtns {
+      display: flex;
+      gap: 8px;
     }
   }
 }
@@ -843,6 +1076,33 @@ function handleCancel() {
 :deep(.ant-radio-group) {
   .ant-radio-wrapper {
     font-size: 12px;
+  }
+}
+
+.batchConfigContent {
+  .batchForm {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .batchFormItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .batchLabel {
+      width: 80px;
+      flex-shrink: 0;
+      font-size: 14px;
+      color: #333;
+    }
+
+    .batchTip {
+      font-size: 12px;
+      color: #999;
+      margin-left: 8px;
+    }
   }
 }
 </style>
