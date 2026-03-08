@@ -9,10 +9,16 @@
         <span>视频配置</span>
         <span v-if="currentConfigs.length" class="count">{{ currentConfigs.length }}</span>
       </div>
-      <button v-if="canGenerate" :disabled="!disableBtn" class="generate-btn" @click="modalShow = true">
-        <i-video-two :size="18" />
-        <span>添加配置</span>
-      </button>
+      <div class="header-btns">
+        <button v-if="canGenerate && currentConfigs.length > 0" :disabled="!disableBtn" class="batch-generate-btn" @click="openBatchGenerate">
+          <i-video-two :size="18" />
+          <span>批量生成</span>
+        </button>
+        <button v-if="canGenerate" :disabled="!disableBtn" class="generate-btn" @click="modalShow = true">
+          <i-video-two :size="18" />
+          <span>添加配置</span>
+        </button>
+      </div>
     </div>
 
     <!-- 内容区 -->
@@ -50,7 +56,6 @@
                   <i-film :size="32" />
                   <span>视频</span>
                 </div>
-                <!-- <img :src="getSelectedResult(config.id)?.firstFrame || getSelectedResult(config.id)?.filePath" class="cover-image" alt="视频封面" /> -->
                 <div class="play-overlay">
                   <div class="play-button">
                     <i-play-one theme="filled" :size="32" fill="#fff" />
@@ -106,6 +111,41 @@
 
     <!-- 视频详情弹窗 -->
     <videoDetail v-if="detailModalShow" v-model="detailModalShow" :configId="currentConfigId" />
+
+    <!-- 批量生成弹窗 -->
+    <a-modal
+      v-model:open="batchGenerateVisible"
+      title="批量生成视频"
+      width="700px"
+      :confirmLoading="batchGenerateLoading"
+      @ok="handleBatchGenerateOk"
+      okText="开始生成"
+      cancelText="取消">
+      <div class="batch-generate-content">
+        <a-alert message="将按顺序为选中的配置生成视频，并发数受设置控制" type="info" show-icon style="margin-bottom: 16px" />
+
+        <div class="batch-generate-list">
+          <a-checkbox-group v-model:value="selectedConfigIds" style="width: 100%">
+            <div v-for="(config, index) in currentConfigs" :key="config.id" class="batch-generate-item">
+              <a-checkbox :value="config.id">
+                <div class="item-content">
+                  <span class="item-index">#{{ index + 1 }}</span>
+                  <span class="item-model">{{ getManufacturerLabel(config.manufacturer) }}</span>
+                  <span class="item-duration">{{ config.duration }}s</span>
+                  <span class="item-prompt">{{ config.prompt || "暂无描述" }}</span>
+                </div>
+              </a-checkbox>
+            </div>
+          </a-checkbox-group>
+        </div>
+
+        <div class="batch-generate-footer">
+          <a-button type="link" @click="selectAllConfigs">全选</a-button>
+          <a-button type="link" @click="clearSelectedConfigs">清空</a-button>
+          <span class="selected-count">已选择 {{ selectedConfigIds.length }} 个配置</span>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -116,6 +156,9 @@ import newVideo from "./generateVideo/newVideo.vue";
 import videoDetail from "./generateVideo/videoDetail.vue";
 import videoStore, { type VideoConfig, type VideoResult } from "@/stores/video";
 import { storeToRefs } from "pinia";
+import settingStore from "@/stores/setting";
+
+const { otherSetting } = storeToRefs(settingStore());
 
 const props = defineProps<{
   scriptId: number | null;
@@ -130,7 +173,10 @@ const modalShow = ref(false);
 const detailModalShow = ref(false);
 const currentConfigId = ref<number | null>(null);
 
-// 厂商标签映射
+const batchGenerateVisible = ref(false);
+const batchGenerateLoading = ref(false);
+const selectedConfigIds = ref<number[]>([]);
+
 const manufacturerLabels: Record<string, string> = {
   volcengine: "豆包",
   runninghub: "Sora",
@@ -147,29 +193,24 @@ function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-// 获取配置的选中结果
 function getSelectedResult(configId: number): VideoResult | null {
   return store.getSelectedResult(configId);
 }
 
-// 检查是否有生成中的结果
 function hasGeneratingResult(configId: number): boolean {
   const results = store.getResultsByConfigId(configId);
   return results.some((r) => r.state === 0);
 }
 
-// 获取结果数量
 function getResultCount(configId: number): number {
   return store.getResultsByConfigId(configId).length;
 }
 
-// 打开详情弹窗
 function openDetail(config: VideoConfig) {
   currentConfigId.value = config.id;
   detailModalShow.value = true;
 }
 
-// 删除配置
 function handleDeleteConfig(configId: number) {
   Modal.confirm({
     title: "确认删除",
@@ -181,6 +222,38 @@ function handleDeleteConfig(configId: number) {
       message.success("删除成功");
     },
   });
+}
+
+function openBatchGenerate() {
+  selectedConfigIds.value = [];
+  batchGenerateVisible.value = true;
+}
+
+function selectAllConfigs() {
+  selectedConfigIds.value = currentConfigs.value.map((c) => c.id);
+}
+
+function clearSelectedConfigs() {
+  selectedConfigIds.value = [];
+}
+
+async function handleBatchGenerateOk() {
+  if (selectedConfigIds.value.length === 0) {
+    message.warning("请至少选择一个配置");
+    return;
+  }
+
+  batchGenerateLoading.value = true;
+  try {
+    const batchSize = otherSetting.value.videoBatchGenereateSize || 3;
+    await store.batchGenerateVideos(selectedConfigIds.value, batchSize);
+    message.success(`已提交 ${selectedConfigIds.value.length} 个视频生成任务`);
+    batchGenerateVisible.value = false;
+  } catch (error: any) {
+    message.error(error?.message || "批量生成失败");
+  } finally {
+    batchGenerateLoading.value = false;
+  }
 }
 </script>
 
@@ -228,12 +301,17 @@ function handleDeleteConfig(configId: number) {
       }
     }
 
-    .generate-btn {
+    .header-btns {
+      display: flex;
+      gap: 12px;
+    }
+
+    .generate-btn,
+    .batch-generate-btn {
       display: flex;
       align-items: center;
       gap: 8px;
       padding: 10px 20px;
-      background: linear-gradient(135deg, #9333ea, #7c3aed);
       color: #fff;
       border: none;
       border-radius: 12px;
@@ -241,22 +319,38 @@ function handleDeleteConfig(configId: number) {
       font-weight: 500;
       cursor: pointer;
       transition: all 0.3s ease;
+    }
+
+    .generate-btn {
+      background: linear-gradient(135deg, #9333ea, #7c3aed);
       box-shadow: 0 4px 14px rgba(147, 51, 234, 0.35);
 
       &:hover:not(:disabled) {
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(147, 51, 234, 0.45);
       }
+    }
 
-      &:active:not(:disabled) {
-        transform: translateY(0);
-      }
+    .batch-generate-btn {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
 
-      &:disabled {
-        background: #d1d5db;
-        box-shadow: none;
-        cursor: not-allowed;
+      &:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
       }
+    }
+
+    .generate-btn:active:not(:disabled),
+    .batch-generate-btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .generate-btn:disabled,
+    .batch-generate-btn:disabled {
+      background: #d1d5db;
+      box-shadow: none;
+      cursor: not-allowed;
     }
   }
 
@@ -548,6 +642,78 @@ function handleDeleteConfig(configId: number) {
         font-size: 14px;
         color: #9ca3af;
       }
+    }
+  }
+}
+
+.batch-generate-content {
+  .batch-generate-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+
+    .batch-generate-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      &:hover {
+        background: #fafafa;
+      }
+
+      .item-content {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        .item-index {
+          min-width: 40px;
+          color: #9333ea;
+          font-weight: 600;
+        }
+
+        .item-model {
+          padding: 2px 8px;
+          background: rgba(147, 51, 234, 0.1);
+          color: #9333ea;
+          border-radius: 4px;
+          font-size: 12px;
+        }
+
+        .item-duration {
+          padding: 2px 8px;
+          background: rgba(34, 197, 94, 0.1);
+          color: #22c55e;
+          border-radius: 4px;
+          font-size: 12px;
+        }
+
+        .item-prompt {
+          flex: 1;
+          color: #666;
+          font-size: 13px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+    }
+  }
+
+  .batch-generate-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+
+    .selected-count {
+      margin-left: auto;
+      color: #666;
+      font-size: 13px;
     }
   }
 }

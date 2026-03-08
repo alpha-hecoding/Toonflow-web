@@ -332,6 +332,14 @@ export default defineStore(
       }
     }
 
+    // 批量生成视频（带并发控制）
+    async function batchGenerateVideos(configIds: number[], batchSize: number): Promise<void> {
+      for (let i = 0; i < configIds.length; i += batchSize) {
+        const batch = configIds.slice(i, i + batchSize);
+        await Promise.allSettled(batch.map((configId) => generateVideo(configId)));
+      }
+    }
+
     // 选择一个结果作为最终选择
     function selectResult(configId: number, resultId: number) {
       const config = videoConfigs.value.find((c) => c.id === configId);
@@ -436,6 +444,7 @@ export default defineStore(
       updateConfig,
       updateConfigFull,
       generateVideo,
+      batchGenerateVideos,
       selectResult,
       getResultsByConfigId,
       getSelectedResult,
