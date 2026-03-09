@@ -10,6 +10,10 @@
         <span v-if="currentConfigs.length" class="count">{{ currentConfigs.length }}</span>
       </div>
       <div class="header-btns">
+        <button v-if="canGenerate && currentConfigs.length > 0" :disabled="!disableBtn" class="batch-delete-btn" @click="openBatchDelete">
+          <i-delete :size="18" />
+          <span>批量删除</span>
+        </button>
         <button v-if="canGenerate && currentConfigs.length > 0" :disabled="!disableBtn" class="batch-generate-btn" @click="openBatchGenerate">
           <i-video-two :size="18" />
           <span>批量生成</span>
@@ -146,6 +150,42 @@
         </div>
       </div>
     </a-modal>
+
+    <!-- 批量删除弹窗 -->
+    <a-modal
+      v-model:open="batchDeleteVisible"
+      title="批量删除视频配置"
+      width="700px"
+      :confirmLoading="batchDeleteLoading"
+      @ok="handleBatchDeleteOk"
+      okText="确认删除"
+      okType="danger"
+      cancelText="取消">
+      <div class="batch-generate-content">
+        <a-alert message="删除后无法恢复，关联的生成结果也会被删除" type="warning" show-icon style="margin-bottom: 16px" />
+
+        <div class="batch-generate-list">
+          <a-checkbox-group v-model:value="deleteConfigIds" style="width: 100%">
+            <div v-for="(config, index) in currentConfigs" :key="config.id" class="batch-generate-item">
+              <a-checkbox :value="config.id">
+                <div class="item-content">
+                  <span class="item-index">#{{ index + 1 }}</span>
+                  <span class="item-model">{{ getManufacturerLabel(config.manufacturer) }}</span>
+                  <span class="item-duration">{{ config.duration }}s</span>
+                  <span class="item-prompt">{{ config.prompt || "暂无描述" }}</span>
+                </div>
+              </a-checkbox>
+            </div>
+          </a-checkbox-group>
+        </div>
+
+        <div class="batch-generate-footer">
+          <a-button type="link" @click="selectAllDeleteConfigs">全选</a-button>
+          <a-button type="link" @click="clearDeleteConfigs">清空</a-button>
+          <span class="selected-count">已选择 {{ deleteConfigIds.length }} 个配置</span>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -176,6 +216,10 @@ const currentConfigId = ref<number | null>(null);
 const batchGenerateVisible = ref(false);
 const batchGenerateLoading = ref(false);
 const selectedConfigIds = ref<number[]>([]);
+
+const batchDeleteVisible = ref(false);
+const batchDeleteLoading = ref(false);
+const deleteConfigIds = ref<number[]>([]);
 
 const manufacturerLabels: Record<string, string> = {
   volcengine: "豆包",
@@ -253,6 +297,37 @@ async function handleBatchGenerateOk() {
     message.error(error?.message || "批量生成失败");
   } finally {
     batchGenerateLoading.value = false;
+  }
+}
+
+function openBatchDelete() {
+  deleteConfigIds.value = [];
+  batchDeleteVisible.value = true;
+}
+
+function selectAllDeleteConfigs() {
+  deleteConfigIds.value = currentConfigs.value.map((c) => c.id);
+}
+
+function clearDeleteConfigs() {
+  deleteConfigIds.value = [];
+}
+
+async function handleBatchDeleteOk() {
+  if (deleteConfigIds.value.length === 0) {
+    message.warning("请至少选择一个配置");
+    return;
+  }
+
+  batchDeleteLoading.value = true;
+  try {
+    await store.batchRemoveConfigs(deleteConfigIds.value);
+    message.success(`已删除 ${deleteConfigIds.value.length} 个视频配置`);
+    batchDeleteVisible.value = false;
+  } catch (error: any) {
+    message.error(error?.message || "批量删除失败");
+  } finally {
+    batchDeleteLoading.value = false;
   }
 }
 </script>
@@ -341,13 +416,25 @@ async function handleBatchGenerateOk() {
       }
     }
 
+    .batch-delete-btn {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+
+      &:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
+      }
+    }
+
     .generate-btn:active:not(:disabled),
-    .batch-generate-btn:active:not(:disabled) {
+    .batch-generate-btn:active:not(:disabled),
+    .batch-delete-btn:active:not(:disabled) {
       transform: translateY(0);
     }
 
     .generate-btn:disabled,
-    .batch-generate-btn:disabled {
+    .batch-generate-btn:disabled,
+    .batch-delete-btn:disabled {
       background: #d1d5db;
       box-shadow: none;
       cursor: not-allowed;

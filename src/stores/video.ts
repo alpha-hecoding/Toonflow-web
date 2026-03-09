@@ -278,6 +278,23 @@ export default defineStore(
       }
     }
 
+    // 批量删除配置
+    async function batchRemoveConfigs(configIds: number[]): Promise<void> {
+      for (const configId of configIds) {
+        try {
+          await axios.post("/video/deleteVideoConfig", { id: configId });
+        } catch (error) {
+          console.error("删除配置失败:", configId, error);
+        }
+        // 删除本地 store 中的数据
+        const index = videoConfigs.value.findIndex((c) => c.id === configId);
+        if (index !== -1) {
+          videoConfigs.value.splice(index, 1);
+          videoResults.value = videoResults.value.filter((r) => r.configId !== configId);
+        }
+      }
+    }
+
     // 生成视频（单个配置）
     async function generateVideo(configId: number): Promise<void> {
       const config = videoConfigs.value.find((c) => c.id === configId);
@@ -441,6 +458,7 @@ export default defineStore(
       addConfig,
       addConfigFromBackend,
       removeConfig,
+      batchRemoveConfigs,
       updateConfig,
       updateConfigFull,
       generateVideo,
