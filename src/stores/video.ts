@@ -357,6 +357,43 @@ export default defineStore(
       }
     }
 
+    // 批量润色提示词（带并发控制）
+    async function batchPolishPrompts(configIds: number[], batchSize: number): Promise<void> {
+      for (let i = 0; i < configIds.length; i += batchSize) {
+        const batch = configIds.slice(i, i + batchSize);
+        await Promise.allSettled(batch.map((configId) => polishPrompt(configId)));
+      }
+    }
+
+    // 润色单个配置的提示词
+    async function polishPrompt(configId: number): Promise<void> {
+      const config = videoConfigs.value.find((c) => c.id === configId);
+
+      if (!config) {
+        throw new Error("配置不存在");
+      }
+
+      const images: ImageItem[] = [];
+      if (config.mode === "startEnd") {
+        if (config.startFrame) images.push(config.startFrame);
+        if (config.endFrame) images.push(config.endFrame);
+      } else if (config.mode === "single") {
+        if (config.startFrame) images.push(config.startFrame);
+      } else {
+        images.push(...config.images);
+      }
+
+      const { data } = await axios.post("/video/generatePrompt", {
+        prompt: config.prompt || "生成视频",
+        images: images.map((img) => ({ filePath: img.filePath, prompt: img.prompt })),
+        duration: config.duration,
+        type: config.mode,
+        videoConfigId: config.id,
+      });
+
+      config.prompt = data;
+    }
+
     // 选择一个结果作为最终选择
     function selectResult(configId: number, resultId: number) {
       const config = videoConfigs.value.find((c) => c.id === configId);
@@ -463,6 +500,8 @@ export default defineStore(
       updateConfigFull,
       generateVideo,
       batchGenerateVideos,
+      batchPolishPrompts,
+      polishPrompt,
       selectResult,
       getResultsByConfigId,
       getSelectedResult,

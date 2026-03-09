@@ -14,6 +14,10 @@
           <i-delete :size="18" />
           <span>批量删除</span>
         </button>
+        <button v-if="canGenerate && currentConfigs.length > 0" :disabled="!disableBtn" class="batch-polish-btn" @click="openBatchPolish">
+          <i-magic :size="18" />
+          <span>批量润色</span>
+        </button>
         <button v-if="canGenerate && currentConfigs.length > 0" :disabled="!disableBtn" class="batch-generate-btn" @click="openBatchGenerate">
           <i-video-two :size="18" />
           <span>批量生成</span>
@@ -186,6 +190,41 @@
         </div>
       </div>
     </a-modal>
+
+    <!-- 批量润色弹窗 -->
+    <a-modal
+      v-model:open="batchPolishVisible"
+      title="批量润色提示词"
+      width="700px"
+      :confirmLoading="batchPolishLoading"
+      @ok="handleBatchPolishOk"
+      okText="开始润色"
+      cancelText="取消">
+      <div class="batch-generate-content">
+        <a-alert message="将按顺序为选中的配置润色提示词，并发数受设置控制" type="info" show-icon style="margin-bottom: 16px" />
+
+        <div class="batch-generate-list">
+          <a-checkbox-group v-model:value="polishConfigIds" style="width: 100%">
+            <div v-for="(config, index) in currentConfigs" :key="config.id" class="batch-generate-item">
+              <a-checkbox :value="config.id">
+                <div class="item-content">
+                  <span class="item-index">#{{ index + 1 }}</span>
+                  <span class="item-model">{{ getManufacturerLabel(config.manufacturer) }}</span>
+                  <span class="item-duration">{{ config.duration }}s</span>
+                  <span class="item-prompt">{{ config.prompt || "暂无描述" }}</span>
+                </div>
+              </a-checkbox>
+            </div>
+          </a-checkbox-group>
+        </div>
+
+        <div class="batch-generate-footer">
+          <a-button type="link" @click="selectAllPolishConfigs">全选</a-button>
+          <a-button type="link" @click="clearPolishConfigs">清空</a-button>
+          <span class="selected-count">已选择 {{ polishConfigIds.length }} 个配置</span>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -220,6 +259,10 @@ const selectedConfigIds = ref<number[]>([]);
 const batchDeleteVisible = ref(false);
 const batchDeleteLoading = ref(false);
 const deleteConfigIds = ref<number[]>([]);
+
+const batchPolishVisible = ref(false);
+const batchPolishLoading = ref(false);
+const polishConfigIds = ref<number[]>([]);
 
 const manufacturerLabels: Record<string, string> = {
   volcengine: "豆包",
@@ -330,6 +373,38 @@ async function handleBatchDeleteOk() {
     batchDeleteLoading.value = false;
   }
 }
+
+function openBatchPolish() {
+  polishConfigIds.value = [];
+  batchPolishVisible.value = true;
+}
+
+function selectAllPolishConfigs() {
+  polishConfigIds.value = currentConfigs.value.map((c) => c.id);
+}
+
+function clearPolishConfigs() {
+  polishConfigIds.value = [];
+}
+
+async function handleBatchPolishOk() {
+  if (polishConfigIds.value.length === 0) {
+    message.warning("请至少选择一个配置");
+    return;
+  }
+
+  batchPolishLoading.value = true;
+  try {
+    const batchSize = otherSetting.value.videoBatchGenereateSize || 3;
+    await store.batchPolishPrompts(polishConfigIds.value, batchSize);
+    message.success(`已润色 ${polishConfigIds.value.length} 个视频配置的提示词`);
+    batchPolishVisible.value = false;
+  } catch (error: any) {
+    message.error(error?.message || "批量润色失败");
+  } finally {
+    batchPolishLoading.value = false;
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -426,15 +501,27 @@ async function handleBatchDeleteOk() {
       }
     }
 
+    .batch-polish-btn {
+      background: linear-gradient(135deg, #9333ea, #7c3aed);
+      box-shadow: 0 4px 14px rgba(147, 51, 234, 0.35);
+
+      &:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(147, 51, 234, 0.45);
+      }
+    }
+
     .generate-btn:active:not(:disabled),
     .batch-generate-btn:active:not(:disabled),
-    .batch-delete-btn:active:not(:disabled) {
+    .batch-delete-btn:active:not(:disabled),
+    .batch-polish-btn:active:not(:disabled) {
       transform: translateY(0);
     }
 
     .generate-btn:disabled,
     .batch-generate-btn:disabled,
-    .batch-delete-btn:disabled {
+    .batch-delete-btn:disabled,
+    .batch-polish-btn:disabled {
       background: #d1d5db;
       box-shadow: none;
       cursor: not-allowed;
